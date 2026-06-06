@@ -1,0 +1,23 @@
+[package]
+name = "b2c-api-workbench"
+version = "0.1.0"
+description = "Local-first desktop API workflow workbench for chained server testing."
+authors = ["B2C Tools"]
+edition = "2021"
+
+[lib]
+name = "b2c_api_workbench_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+keyring = "3"
+regex = "1"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
+rusqlite = { version = "0.32", features = ["bundled"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tauri = { version = "2", features = [] }
+url = "2"

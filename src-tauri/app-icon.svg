@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="176" y1="96" x2="848" y2="928" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#24231f"/>
+      <stop offset="1" stop-color="#0f2e2a"/>
+    </linearGradient>
+    <linearGradient id="mark" x1="260" y1="250" x2="764" y2="740" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#fdf9ee"/>
+      <stop offset="1" stop-color="#dfeee8"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1024" height="1024" rx="220" fill="url(#bg)"/>
+  <rect x="116" y="116" width="792" height="792" rx="178" fill="none" stroke="#ffffff" stroke-width="14" opacity="0.045"/>
+
+  <text x="512" y="584"
+        text-anchor="middle"
+        font-family="Arial Black, Arial, Helvetica, sans-serif"
+        font-size="326"
+        font-weight="900"
+        letter-spacing="-10"
+        fill="url(#mark)">API</text>
+
+  <path d="M218 708h396" fill="none" stroke="#1a9b87" stroke-width="66" stroke-linecap="round"/>
+  <path d="M686 640l108 100-108 100" fill="none" stroke="#1a9b87" stroke-width="66" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="214" cy="708" r="33" fill="#f0b84d"/>
+</svg>
