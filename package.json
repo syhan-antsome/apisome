@@ -8,6 +8,7 @@
     "desktop": "tauri dev",
     "tauri": "tauri",
     "build": "tsc && vite build",
+    "build:exe": "tauri build --no-bundle",
     "build:app": "tauri build --bundles app",
     "build:installer": "tauri build",
     "preview": "vite preview --host 127.0.0.1"

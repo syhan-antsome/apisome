@@ -127,7 +127,21 @@ npm run dev
 npm run build
 ```
 
-현재 플랫폼용 앱 번들을 빌드합니다.
+설치파일 없이 현재 플랫폼용 실행 파일만 빌드합니다.
+
+```powershell
+npm run build:exe
+```
+
+Windows에서는 아래 파일이 생성됩니다.
+
+```text
+src-tauri\target\release\b2c-api-workbench.exe
+```
+
+이 파일은 설치 과정 없이 직접 실행할 수 있습니다. 다만 받는 PC에 Microsoft Edge WebView2 Runtime이 필요할 수 있습니다.
+
+macOS에서는 같은 명령이 `.app`이 아니라 실행 바이너리만 만듭니다. macOS 사용자에게 전달할 앱 번들이 필요하면 아래 명령을 사용합니다.
 
 ```powershell
 npm run build:app
