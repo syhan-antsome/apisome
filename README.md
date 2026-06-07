@@ -139,7 +139,9 @@ Windows에서는 아래 파일이 생성됩니다.
 src-tauri\target\release\b2c-api-workbench.exe
 ```
 
-이 파일은 설치 과정 없이 직접 실행할 수 있습니다. 다만 받는 PC에 Microsoft Edge WebView2 Runtime이 필요할 수 있습니다.
+이 파일은 설치 과정 없이 직접 실행할 수 있습니다.
+
+실행한 PC에 Microsoft Edge WebView2 Runtime이 없으면 프로그램 시작 전에 Windows 안내창이 표시됩니다. 사용자가 다운로드 페이지를 열 수 있고, 프로그램은 종료됩니다. WebView2 Runtime을 설치한 뒤 다시 실행하면 됩니다.
 
 macOS에서는 같은 명령이 `.app`이 아니라 실행 바이너리만 만듭니다. macOS 사용자에게 전달할 앱 번들이 필요하면 아래 명령을 사용합니다.
 
@@ -201,6 +203,8 @@ rustup default stable-x86_64-pc-windows-msvc
 ### WebView2 오류
 
 Microsoft Edge WebView2 Runtime을 설치합니다.
+
+앱이 시작되기 전에 `WebView2 Runtime 필요` 안내창이 나오면 다운로드 페이지를 열어 WebView2 Runtime을 설치한 뒤 다시 실행하세요.
 
 ## 개발 메모
 

@@ -12,6 +12,11 @@ use url::Url;
 const WORKSPACE_ID: &str = "default";
 const KEYCHAIN_SERVICE: &str = "B2C API Workbench";
 
+#[cfg(windows)]
+const WEBVIEW2_RUNTIME_URL: &str = "https://developer.microsoft.com/microsoft-edge/webview2/";
+#[cfg(windows)]
+const WEBVIEW2_CLIENT_GUID: &str = "{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}";
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct KeyValue {
@@ -836,8 +841,136 @@ async fn run_workflow(
     })
 }
 
+#[cfg(windows)]
+fn webview2_registry_version(root: winreg::HKEY, path: &str) -> Option<String> {
+    use winreg::RegKey;
+
+    let key = RegKey::predef(root).open_subkey(path).ok()?;
+    let version: String = key.get_value("pv").ok()?;
+    let version = version.trim().to_string();
+    if version.is_empty() || version == "0.0.0.0" {
+        None
+    } else {
+        Some(version)
+    }
+}
+
+#[cfg(windows)]
+fn webview2_registry_installed() -> bool {
+    use winreg::enums::{HKEY_CURRENT_USER, HKEY_LOCAL_MACHINE};
+
+    let clients_path = format!(r"Software\Microsoft\EdgeUpdate\Clients\{WEBVIEW2_CLIENT_GUID}");
+    let wow_clients_path =
+        format!(r"Software\WOW6432Node\Microsoft\EdgeUpdate\Clients\{WEBVIEW2_CLIENT_GUID}");
+
+    [
+        (HKEY_CURRENT_USER, clients_path.as_str()),
+        (HKEY_LOCAL_MACHINE, clients_path.as_str()),
+        (HKEY_LOCAL_MACHINE, wow_clients_path.as_str()),
+    ]
+    .into_iter()
+    .any(|(root, path)| webview2_registry_version(root, path).is_some())
+}
+
+#[cfg(windows)]
+fn webview2_files_installed() -> bool {
+    let roots = [
+        std::env::var_os("ProgramFiles(x86)"),
+        std::env::var_os("ProgramFiles"),
+        std::env::var_os("LOCALAPPDATA"),
+    ];
+
+    roots.into_iter().flatten().any(|root| {
+        let app_dir = std::path::PathBuf::from(root)
+            .join("Microsoft")
+            .join("EdgeWebView")
+            .join("Application");
+
+        if app_dir.join("msedgewebview2.exe").is_file() {
+            return true;
+        }
+
+        let Ok(entries) = std::fs::read_dir(app_dir) else {
+            return false;
+        };
+
+        entries
+            .flatten()
+            .any(|entry| entry.path().join("msedgewebview2.exe").is_file())
+    })
+}
+
+#[cfg(windows)]
+fn webview2_runtime_installed() -> bool {
+    webview2_registry_installed() || webview2_files_installed()
+}
+
+#[cfg(windows)]
+fn wide_string(value: &str) -> Vec<u16> {
+    value.encode_utf16().chain(std::iter::once(0)).collect()
+}
+
+#[cfg(windows)]
+fn show_webview2_missing_dialog() -> bool {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        MessageBoxW, IDYES, MB_DEFBUTTON1, MB_ICONWARNING, MB_YESNO,
+    };
+
+    let message = wide_string(
+        "B2C API Workbench를 실행하려면 Microsoft Edge WebView2 Runtime이 필요합니다.\n\n\
+         [예]를 누르면 다운로드 페이지를 엽니다.\n\
+         WebView2 Runtime을 설치한 뒤 프로그램을 다시 실행해 주세요.",
+    );
+    let title = wide_string("WebView2 Runtime 필요");
+
+    unsafe {
+        MessageBoxW(
+            std::ptr::null_mut(),
+            message.as_ptr(),
+            title.as_ptr(),
+            MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON1,
+        ) == IDYES
+    }
+}
+
+#[cfg(windows)]
+fn open_webview2_download_page() {
+    use windows_sys::Win32::UI::Shell::ShellExecuteW;
+    use windows_sys::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
+
+    let operation = wide_string("open");
+    let url = wide_string(WEBVIEW2_RUNTIME_URL);
+
+    unsafe {
+        ShellExecuteW(
+            std::ptr::null_mut(),
+            operation.as_ptr(),
+            url.as_ptr(),
+            std::ptr::null(),
+            std::ptr::null(),
+            SW_SHOWNORMAL,
+        );
+    }
+}
+
+#[cfg(windows)]
+fn ensure_webview2_runtime_or_exit() {
+    if webview2_runtime_installed() {
+        return;
+    }
+
+    if show_webview2_missing_dialog() {
+        open_webview2_download_page();
+    }
+
+    std::process::exit(1);
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    #[cfg(windows)]
+    ensure_webview2_runtime_or_exit();
+
     tauri::Builder::default()
         .invoke_handler(tauri::generate_handler![
             load_workspace,
