@@ -5,6 +5,15 @@ export default defineConfig({
   plugins: [react()],
   server: {
     port: 5173,
-    strictPort: false
+    strictPort: false,
+    watch: {
+      ignored: [
+        "**/.git/**",
+        "**/node_modules/**",
+        "**/dist/**",
+        "**/src-tauri/target/**",
+        "**/src-tauri/gen/**"
+      ]
+    }
   }
 });

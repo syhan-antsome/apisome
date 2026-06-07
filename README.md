@@ -155,6 +155,17 @@ Windows에서 확인할 주요 결과물:
 
 ## 자주 생기는 문제
 
+### `EBUSY: resource busy or locked, watch ...\src-tauri\target...dll` 오류
+
+Windows에서 `npm run desktop` 실행 중 Rust 빌드 산출물 DLL을 Vite가 감시하려고 할 때 발생할 수 있습니다. `vite.config.ts`에서 `src-tauri/target`과 `src-tauri/gen` 폴더를 watch 제외하도록 설정되어 있어야 합니다.
+
+이미 오류가 난 터미널은 종료한 뒤 다시 실행하세요. 필요하면 아래 산출물을 삭제하고 재시도할 수 있습니다.
+
+```powershell
+Remove-Item -Recurse -Force .\src-tauri\target
+npm run desktop
+```
+
 ### `link.exe` 또는 C++ build tools 관련 오류
 
 Microsoft C++ Build Tools가 설치되지 않았거나, Windows SDK가 빠진 경우입니다.
