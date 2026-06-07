@@ -866,13 +866,15 @@ fn webview2_registry_installed() -> bool {
     let wow_clients_path =
         format!(r"Software\WOW6432Node\Microsoft\EdgeUpdate\Clients\{WEBVIEW2_CLIENT_GUID}");
 
-    [
+    let installed = [
         (HKEY_CURRENT_USER, clients_path.as_str()),
         (HKEY_LOCAL_MACHINE, clients_path.as_str()),
         (HKEY_LOCAL_MACHINE, wow_clients_path.as_str()),
     ]
     .into_iter()
-    .any(|(root, path)| webview2_registry_version(root, path).is_some())
+    .any(|(root, path)| webview2_registry_version(root, path).is_some());
+
+    installed
 }
 
 #[cfg(windows)]
