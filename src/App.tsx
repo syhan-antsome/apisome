@@ -49,6 +49,21 @@ function createResetConfirmPhrase() {
   return Array.from(bytes, (byte) => resetConfirmChars[byte % resetConfirmChars.length]).join("");
 }
 
+type DeleteConfirmPayload = {
+  message: string;
+  onConfirm: () => void | Promise<void>;
+};
+
+const deleteConfirmEventName = "b2c-delete-confirm";
+
+function confirmDelete(message: string, onConfirm: () => void | Promise<void>) {
+  window.dispatchEvent(new CustomEvent<DeleteConfirmPayload>(deleteConfirmEventName, { detail: { message, onConfirm } }));
+}
+
+function deleteTargetName(value: string | undefined, fallback: string) {
+  return value?.trim() || fallback;
+}
+
 function id(prefix: string) {
   return `${prefix}_${Math.random().toString(36).slice(2, 10)}`;
 }
@@ -468,8 +483,18 @@ function App() {
   const [isResetDialogOpen, setIsResetDialogOpen] = useState(false);
   const [resetConfirmText, setResetConfirmText] = useState("");
   const [resetConfirmPhrase, setResetConfirmPhrase] = useState(() => createResetConfirmPhrase());
+  const [deleteConfirm, setDeleteConfirm] = useState<DeleteConfirmPayload | null>(null);
 
   const api = useMemo(() => getApi(), []);
+
+  useEffect(() => {
+    function handleDeleteConfirm(event: Event) {
+      setDeleteConfirm((event as CustomEvent<DeleteConfirmPayload>).detail);
+    }
+
+    window.addEventListener(deleteConfirmEventName, handleDeleteConfirm);
+    return () => window.removeEventListener(deleteConfirmEventName, handleDeleteConfirm);
+  }, []);
 
   useEffect(() => {
     api.loadWorkspace().then((saved) => {
@@ -512,30 +537,33 @@ function App() {
   }
 
   function deleteServer(serverId: string) {
-    setWorkspace((current) => {
-      const remainingServers = current.servers.filter((item) => item.id !== serverId);
-      const fallbackServer =
-        remainingServers[0] || {
-          id: id("server"),
-          name: "새 서버",
-          baseUrl: "https://api.example.com",
-          headers: [kv("Accept", "application/json")],
-          variables: []
-        };
-      const nextServers = remainingServers.length ? remainingServers : [fallbackServer];
-      const nextServerIds = new Set(nextServers.map((item) => item.id));
-      const nextActiveServerId = nextServerIds.has(current.activeServerId) ? current.activeServerId : fallbackServer.id;
+    const serverName = deleteTargetName(workspace.servers.find((item) => item.id === serverId)?.name, "선택한 서버");
+    confirmDelete("서버 \"" + serverName + "\"을 삭제할까요?", () => {
+      setWorkspace((current) => {
+        const remainingServers = current.servers.filter((item) => item.id !== serverId);
+        const fallbackServer =
+          remainingServers[0] || {
+            id: id("server"),
+            name: "새 서버",
+            baseUrl: "https://api.example.com",
+            headers: [kv("Accept", "application/json")],
+            variables: []
+          };
+        const nextServers = remainingServers.length ? remainingServers : [fallbackServer];
+        const nextServerIds = new Set(nextServers.map((item) => item.id));
+        const nextActiveServerId = nextServerIds.has(current.activeServerId) ? current.activeServerId : fallbackServer.id;
 
-      return {
-        ...current,
-        servers: nextServers,
-        workflows: current.workflows.map((workflow) =>
-          nextServerIds.has(workflow.serverId) ? workflow : { ...workflow, serverId: fallbackServer.id }
-        ),
-        activeServerId: nextActiveServerId
-      };
+        return {
+          ...current,
+          servers: nextServers,
+          workflows: current.workflows.map((workflow) =>
+            nextServerIds.has(workflow.serverId) ? workflow : { ...workflow, serverId: fallbackServer.id }
+          ),
+          activeServerId: nextActiveServerId
+        };
+      });
+      setResult(null);
     });
-    setResult(null);
   }
 
   function replaceRequest(request: ApiRequest) {
@@ -546,35 +574,38 @@ function App() {
   }
 
   function deleteRequest(requestId: string) {
-    setWorkspace((current) => {
-      const remainingRequests = current.requests.filter((item) => item.id !== requestId);
-      const fallbackRequest =
-        remainingRequests[0] ||
-        normalizeRequest({
-          id: id("request"),
-          name: "새 API",
-          method: "GET",
-          path: "/",
-          pathParams: [],
-          authTokenId: "",
-          query: [],
-          headers: [],
-          body: ""
-        });
-      const nextRequests = remainingRequests.length ? remainingRequests : [fallbackRequest];
-      const workflows = current.workflows.map((workflow) => ({
-        ...workflow,
-        steps: workflow.steps.filter((step) => step.requestId !== requestId)
-      }));
+    const requestName = deleteTargetName(workspace.requests.find((item) => item.id === requestId)?.name, "선택한 API");
+    confirmDelete("API \"" + requestName + "\"를 삭제할까요?", () => {
+      setWorkspace((current) => {
+        const remainingRequests = current.requests.filter((item) => item.id !== requestId);
+        const fallbackRequest =
+          remainingRequests[0] ||
+          normalizeRequest({
+            id: id("request"),
+            name: "새 API",
+            method: "GET",
+            path: "/",
+            pathParams: [],
+            authTokenId: "",
+            query: [],
+            headers: [],
+            body: ""
+          });
+        const nextRequests = remainingRequests.length ? remainingRequests : [fallbackRequest];
+        const workflows = current.workflows.map((workflow) => ({
+          ...workflow,
+          steps: workflow.steps.filter((step) => step.requestId !== requestId)
+        }));
 
-      return {
-        ...current,
-        requests: nextRequests,
-        workflows,
-        activeRequestId: current.activeRequestId === requestId ? fallbackRequest.id : current.activeRequestId
-      };
+        return {
+          ...current,
+          requests: nextRequests,
+          workflows,
+          activeRequestId: current.activeRequestId === requestId ? fallbackRequest.id : current.activeRequestId
+        };
+      });
+      setResult(null);
     });
-    setResult(null);
   }
 
   function replaceToken(accessToken: AccessToken) {
@@ -600,21 +631,24 @@ function App() {
     }
   }
 
-  async function deleteToken(tokenId: string) {
-    setWorkspace((current) => {
-      const accessTokens = current.accessTokens.filter((item) => item.id !== tokenId);
-      return {
-        ...current,
-        accessTokens,
-        activeTokenId: current.activeTokenId === tokenId ? accessTokens[0]?.id || "" : current.activeTokenId,
-        requests: current.requests.map((request) => (request.authTokenId === tokenId ? { ...request, authTokenId: "" } : request))
-      };
+  function deleteToken(tokenId: string) {
+    const tokenName = deleteTargetName(workspace.accessTokens.find((item) => item.id === tokenId)?.name, "선택한 토큰");
+    confirmDelete("토큰 \"" + tokenName + "\"을 삭제할까요?", async () => {
+      setWorkspace((current) => {
+        const accessTokens = current.accessTokens.filter((item) => item.id !== tokenId);
+        return {
+          ...current,
+          accessTokens,
+          activeTokenId: current.activeTokenId === tokenId ? accessTokens[0]?.id || "" : current.activeTokenId,
+          requests: current.requests.map((request) => (request.authTokenId === tokenId ? { ...request, authTokenId: "" } : request))
+        };
+      });
+      try {
+        await api.deleteSecret(tokenSecretKey(tokenId));
+      } catch (error) {
+        console.warn("Failed to delete token secret", error);
+      }
     });
-    try {
-      await api.deleteSecret(tokenSecretKey(tokenId));
-    } catch (error) {
-      console.warn("Failed to delete token secret", error);
-    }
   }
 
   function replaceWorkflow(workflow: Workflow) {
@@ -747,6 +781,17 @@ function App() {
     setIsResetDialogOpen(false);
   }
 
+  function cancelDeleteConfirm() {
+    setDeleteConfirm(null);
+  }
+
+  async function confirmPendingDelete() {
+    const current = deleteConfirm;
+    if (!current) return;
+    setDeleteConfirm(null);
+    await current.onConfirm();
+  }
+
   return (
     <main className="shell">
       <aside className="rail">
@@ -863,7 +908,6 @@ function App() {
               <TokenEditor
                 tokens={workspace.accessTokens}
                 activeTokenId={workspace.activeTokenId}
-                onSelect={(activeTokenId) => updateWorkspace({ activeTokenId })}
                 onChange={replaceToken}
                 onSaveValue={saveTokenValue}
                 onAdd={addToken}
@@ -921,6 +965,31 @@ function App() {
           </section>
         </div>
       </section>
+
+      {deleteConfirm && (
+        <div className="modal-backdrop" role="presentation" onMouseDown={cancelDeleteConfirm}>
+          <section className="confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="delete-dialog-title" onMouseDown={(event) => event.stopPropagation()}>
+            <div className="confirm-dialog-header">
+              <div>
+                <h2 id="delete-dialog-title">삭제 확인</h2>
+                <p>{deleteConfirm.message}</p>
+              </div>
+              <button className="icon-button" onClick={cancelDeleteConfirm} title="닫기">
+                <X size={15} />
+              </button>
+            </div>
+            <div className="confirm-warning">삭제 후에는 되돌릴 수 없습니다.</div>
+            <div className="confirm-actions">
+              <button className="secondary" onClick={cancelDeleteConfirm}>
+                취소
+              </button>
+              <button className="primary danger-primary" onClick={confirmPendingDelete}>
+                삭제
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
 
       {isResetDialogOpen && (
         <div className="modal-backdrop" role="presentation" onMouseDown={cancelResetWorkspace}>
@@ -1030,7 +1099,16 @@ function KeyValueEditor({
           </button>
           <input value={row.key} onChange={(event) => patchRow(index, { key: event.target.value })} placeholder={keyPlaceholder} />
           <input value={row.value} onChange={(event) => patchRow(index, { value: event.target.value })} placeholder={valuePlaceholder} />
-          <button className="icon-button danger" onClick={() => onChange(rows.filter((_, rowIndex) => rowIndex !== index))} title="삭제">
+          <button
+            className="icon-button danger"
+            onClick={() => {
+              const rowName = deleteTargetName(row.key || row.value, title + " 항목 " + (index + 1));
+              confirmDelete(title + " 항목 \"" + rowName + "\"을 삭제할까요?", () => {
+                onChange(rows.filter((_, rowIndex) => rowIndex !== index));
+              });
+            }}
+            title="삭제"
+          >
             <Trash2 size={15} />
           </button>
         </div>
@@ -1131,7 +1209,6 @@ function RequestEditor({
 function TokenEditor({
   tokens,
   activeTokenId,
-  onSelect,
   onChange,
   onSaveValue,
   onAdd,
@@ -1139,11 +1216,10 @@ function TokenEditor({
 }: {
   tokens: AccessToken[];
   activeTokenId: string;
-  onSelect: (id: string) => void;
   onChange: (accessToken: AccessToken) => void;
   onSaveValue: (accessToken: AccessToken) => Promise<void>;
   onAdd: () => void;
-  onDelete: (id: string) => Promise<void>;
+  onDelete: (id: string) => void | Promise<void>;
 }) {
   const activeToken = tokens.find((item) => item.id === activeTokenId) || tokens[0];
 
@@ -1172,54 +1248,38 @@ function TokenEditor({
           <h2>액세스 토큰</h2>
           <p>선택한 API에는 `authorization: Bearer ...` 헤더가 자동으로 들어갑니다.</p>
         </div>
-        <button className="secondary" onClick={onAdd}>
-          <Plus size={16} /> 토큰 추가
+        <button className="secondary danger-action" onClick={() => onDelete(activeToken.id)}>
+          <Trash2 size={16} /> 토큰 삭제
         </button>
       </div>
 
-      <div className="token-layout">
-        <div className="token-list">
-          {tokens.map((item) => (
-            <button key={item.id} className={item.id === activeToken.id ? "selected" : ""} onClick={() => onSelect(item.id)}>
-              <strong>{item.name}</strong>
-              <span>{item.hasValue || item.value ? "저장됨" : "값 없음"}</span>
-            </button>
-          ))}
-        </div>
+      <div className="two-col">
+        <Field label="토큰 이름">
+          <input value={activeToken.name} onChange={(event) => onChange({ ...activeToken, name: event.target.value })} placeholder="개발 서버 관리자 토큰" />
+        </Field>
+        <Field label="저장 상태">
+          <input value={activeToken.hasValue || activeToken.value ? "저장됨" : "값 없음"} readOnly />
+        </Field>
+      </div>
 
-        <div className="token-detail">
-          <div className="two-col">
-            <Field label="토큰 이름">
-              <input value={activeToken.name} onChange={(event) => onChange({ ...activeToken, name: event.target.value })} placeholder="개발 서버 관리자 토큰" />
-            </Field>
-            <Field label="저장 상태">
-              <input value={activeToken.hasValue || activeToken.value ? "저장됨" : "값 없음"} readOnly />
-            </Field>
-          </div>
-          <Field label="토큰 값">
-            <input
-              value={activeToken.value}
-              onChange={(event) => {
-                const next = { ...activeToken, value: event.target.value, hasValue: Boolean(event.target.value) || activeToken.hasValue };
-                onChange(next);
-              }}
-              onBlur={(event) => onSaveValue({ ...activeToken, value: event.target.value, hasValue: Boolean(event.target.value) || activeToken.hasValue })}
-              placeholder={activeToken.hasValue ? "저장된 토큰을 변경하려면 새 값을 입력하세요" : "eyJhbGciOi..."}
-              type="password"
-            />
-          </Field>
-          <div className="token-actions">
-            <span>Bearer 접두어는 호출 시 자동으로 추가됩니다.</span>
-            <div className="token-action-buttons">
-              <button className="secondary" onClick={() => onSaveValue(activeToken)} disabled={!activeToken.value}>
-                <Save size={16} /> 토큰 저장
-              </button>
-              <button className="secondary danger-action" onClick={() => onDelete(activeToken.id)}>
-                <Trash2 size={16} /> 토큰 삭제
-              </button>
-            </div>
-          </div>
-        </div>
+      <Field label="토큰 값">
+        <input
+          value={activeToken.value}
+          onChange={(event) => {
+            const next = { ...activeToken, value: event.target.value, hasValue: Boolean(event.target.value) || activeToken.hasValue };
+            onChange(next);
+          }}
+          onBlur={(event) => onSaveValue({ ...activeToken, value: event.target.value, hasValue: Boolean(event.target.value) || activeToken.hasValue })}
+          placeholder={activeToken.hasValue ? "저장된 토큰을 변경하려면 새 값을 입력하세요" : "eyJhbGciOi..."}
+          type="password"
+        />
+      </Field>
+
+      <div className="token-actions">
+        <span>Bearer 접두어는 호출 시 자동으로 추가됩니다.</span>
+        <button className="secondary" onClick={() => onSaveValue(activeToken)} disabled={!activeToken.value}>
+          <Save size={16} /> 토큰 저장
+        </button>
       </div>
     </div>
   );
@@ -1327,7 +1387,12 @@ function WorkflowEditor({
                   )}
                   <button
                     className="icon-button danger"
-                    onClick={() => onChange({ ...workflow, steps: workflow.steps.filter((_, stepIndex) => stepIndex !== index) })}
+                    onClick={() => {
+                      const stepName = deleteTargetName(step.name, "단계 " + (index + 1));
+                      confirmDelete("워크플로 단계 \"" + stepName + "\"를 삭제할까요?", () => {
+                        onChange({ ...workflow, steps: workflow.steps.filter((_, stepIndex) => stepIndex !== index) });
+                      });
+                    }}
                     title="단계 삭제"
                   >
                     <Trash2 size={15} />
@@ -1373,7 +1438,16 @@ function ExtractRuleEditor({ rules, onChange }: { rules: ExtractRule[]; onChange
           <input value={item.path} onChange={(event) => patchRule(index, { path: event.target.value })} placeholder="data.token" />
           <ChevronRight size={15} />
           <input value={item.variable} onChange={(event) => patchRule(index, { variable: event.target.value })} placeholder="token" />
-          <button className="icon-button danger" onClick={() => onChange(rules.filter((_, ruleIndex) => ruleIndex !== index))} title="삭제">
+          <button
+            className="icon-button danger"
+            onClick={() => {
+              const ruleName = deleteTargetName(item.name || item.variable, "추출 규칙 " + (index + 1));
+              confirmDelete("추출 규칙 \"" + ruleName + "\"을 삭제할까요?", () => {
+                onChange(rules.filter((_, ruleIndex) => ruleIndex !== index));
+              });
+            }}
+            title="삭제"
+          >
             <Trash2 size={15} />
           </button>
         </div>
