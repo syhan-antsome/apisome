@@ -16,6 +16,9 @@ const KEYCHAIN_SERVICE: &str = "B2C API Workbench";
 const WEBVIEW2_RUNTIME_URL: &str = "https://developer.microsoft.com/microsoft-edge/webview2/";
 #[cfg(windows)]
 const WEBVIEW2_CLIENT_GUID: &str = "{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}";
+// Temporary test switch. Set this back to false after checking the Windows dialog.
+#[cfg(windows)]
+const FORCE_WEBVIEW2_RUNTIME_REQUIRED_DIALOG: bool = true;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -955,7 +958,7 @@ fn open_webview2_download_page() {
 
 #[cfg(windows)]
 fn ensure_webview2_runtime_or_exit() {
-    if webview2_runtime_installed() {
+    if !FORCE_WEBVIEW2_RUNTIME_REQUIRED_DIALOG && webview2_runtime_installed() {
         return;
     }
 
