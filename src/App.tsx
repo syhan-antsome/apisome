@@ -511,6 +511,33 @@ function App() {
     }));
   }
 
+  function deleteServer(serverId: string) {
+    setWorkspace((current) => {
+      const remainingServers = current.servers.filter((item) => item.id !== serverId);
+      const fallbackServer =
+        remainingServers[0] || {
+          id: id("server"),
+          name: "새 서버",
+          baseUrl: "https://api.example.com",
+          headers: [kv("Accept", "application/json")],
+          variables: []
+        };
+      const nextServers = remainingServers.length ? remainingServers : [fallbackServer];
+      const nextServerIds = new Set(nextServers.map((item) => item.id));
+      const nextActiveServerId = nextServerIds.has(current.activeServerId) ? current.activeServerId : fallbackServer.id;
+
+      return {
+        ...current,
+        servers: nextServers,
+        workflows: current.workflows.map((workflow) =>
+          nextServerIds.has(workflow.serverId) ? workflow : { ...workflow, serverId: fallbackServer.id }
+        ),
+        activeServerId: nextActiveServerId
+      };
+    });
+    setResult(null);
+  }
+
   function replaceRequest(request: ApiRequest) {
     setWorkspace((current) => ({
       ...current,
@@ -821,7 +848,9 @@ function App() {
 
         <div className="content">
           <section className="editor-pane">
-            {view === "servers" && activeServer && <ServerEditor server={activeServer} onChange={replaceServer} />}
+            {view === "servers" && activeServer && (
+              <ServerEditor server={activeServer} onChange={replaceServer} onDelete={() => deleteServer(activeServer.id)} />
+            )}
             {view === "requests" && activeRequest && (
               <RequestEditor
                 request={activeRequest}
@@ -1010,7 +1039,7 @@ function KeyValueEditor({
   );
 }
 
-function ServerEditor({ server, onChange }: { server: ServerProfile; onChange: (server: ServerProfile) => void }) {
+function ServerEditor({ server, onChange, onDelete }: { server: ServerProfile; onChange: (server: ServerProfile) => void; onDelete: () => void }) {
   return (
     <div className="form-stack">
       <div className="pane-heading">
@@ -1019,6 +1048,9 @@ function ServerEditor({ server, onChange }: { server: ServerProfile; onChange: (
           <h2>서버 정보</h2>
           <p>base URL, 공통 헤더, 배치에서 사용할 기본 변수를 저장합니다.</p>
         </div>
+        <button className="secondary danger-action" onClick={onDelete}>
+          <Trash2 size={16} /> 서버 삭제
+        </button>
       </div>
       <div className="two-col">
         <Field label="서버 이름">
