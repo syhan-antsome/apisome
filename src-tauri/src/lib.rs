@@ -64,7 +64,21 @@ struct ApiRequest {
     #[serde(default)]
     headers: Vec<KeyValue>,
     #[serde(default)]
+    body_mode: String,
+    #[serde(default)]
     body: String,
+    #[serde(default)]
+    multipart_fields: Vec<MultipartField>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct MultipartField {
+    id: String,
+    name: String,
+    value: String,
+    content_type: String,
+    enabled: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -385,6 +399,11 @@ fn active_pairs(rows: &[KeyValue]) -> impl Iterator<Item = &KeyValue> {
     rows.iter().filter(|row| row.enabled && !row.key.is_empty())
 }
 
+fn active_multipart_fields(rows: &[MultipartField]) -> impl Iterator<Item = &MultipartField> {
+    rows.iter()
+        .filter(|row| row.enabled && !row.name.is_empty())
+}
+
 fn interpolate(value: &str, vars: &HashMap<String, String>) -> String {
     let pattern =
         Regex::new(r"\{\{\s*([a-zA-Z0-9_.-]+)\s*\}\}").expect("valid interpolation regex");
@@ -519,6 +538,63 @@ fn apply_auth_token_header(
         format!("Bearer {}", interpolate(&token_value, vars)),
     );
     Ok(())
+}
+
+fn is_multipart_request(request: &ApiRequest) -> bool {
+    request.body_mode == "multipart"
+}
+
+fn remove_content_type_header(headers: &mut HashMap<String, String>) {
+    headers.retain(|key, _| key.to_lowercase() != "content-type");
+}
+
+fn multipart_preview(request: &ApiRequest, vars: &HashMap<String, String>) -> Option<String> {
+    if !is_multipart_request(request) || request.multipart_fields.is_empty() {
+        return None;
+    }
+
+    let parts = active_multipart_fields(&request.multipart_fields)
+        .map(|field| {
+            let name = interpolate(&field.name, vars);
+            let content_type = interpolate(&field.content_type, vars).trim().to_string();
+            let value = interpolate(&field.value, vars);
+            let mut lines = vec![format!("name: {name}")];
+            if !content_type.is_empty() {
+                lines.push(format!("content-type: {content_type}"));
+            }
+            lines.push(String::new());
+            lines.push(value);
+            lines.join("\n")
+        })
+        .collect::<Vec<_>>();
+
+    if parts.is_empty() {
+        None
+    } else {
+        Some(parts.join("\n\n--- part ---\n\n"))
+    }
+}
+
+fn build_multipart_form(
+    request: &ApiRequest,
+    vars: &HashMap<String, String>,
+) -> Result<reqwest::multipart::Form, String> {
+    let mut form = reqwest::multipart::Form::new();
+
+    for field in active_multipart_fields(&request.multipart_fields) {
+        let name = interpolate(&field.name, vars);
+        let value = interpolate(&field.value, vars);
+        let content_type = interpolate(&field.content_type, vars).trim().to_string();
+        let mut part = reqwest::multipart::Part::text(value);
+        if !content_type.is_empty() {
+            part = part
+                .mime_str(&content_type)
+                .map_err(|error| format!("Invalid multipart content type: {error}"))?;
+        }
+        form = form.part(name, part);
+    }
+
+    Ok(form)
 }
 
 fn json_path<'a>(value: &'a Value, path: &str) -> Option<&'a Value> {
@@ -657,7 +733,16 @@ async fn execute_request(
     let mut headers = build_headers(server, request, &vars);
     apply_auth_token_header(app, &mut headers, request, access_tokens, &vars)?;
     let method = request.method.to_uppercase();
-    let body = if matches!(method.as_str(), "GET" | "HEAD") || request.body.is_empty() {
+    let has_body = !matches!(method.as_str(), "GET" | "HEAD");
+    let multipart = has_body && is_multipart_request(request);
+    if multipart {
+        remove_content_type_header(&mut headers);
+    }
+    let body = if !has_body {
+        None
+    } else if multipart {
+        multipart_preview(request, &vars)
+    } else if request.body.is_empty() {
         None
     } else {
         Some(interpolate(&request.body, &vars))
@@ -701,7 +786,9 @@ async fn execute_request(
     for (key, value) in &headers {
         builder = builder.header(key, value);
     }
-    if let Some(body) = &body {
+    if multipart {
+        builder = builder.multipart(build_multipart_form(request, &vars)?);
+    } else if let Some(body) = &body {
         builder = builder.body(body.clone());
     }
 

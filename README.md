@@ -8,8 +8,28 @@ Tauri 2 + React + TypeScript 기반의 로컬 API 테스트 도구입니다. 서
 - API 요청 템플릿 등록
 - Path parameter 지원: `/api/users/{memberId}`
 - Bearer 토큰 저장 및 API 호출 시 자동 헤더 적용
+- Raw JSON body 및 multipart/form-data body 지원
 - 요청 전문과 응답 본문 확인
 - macOS / Windows 데스크톱 앱 빌드
+
+## multipart/form-data 요청
+
+`curl -F 'request={...};type=application/json'` 형태의 요청은 API 편집 화면에서 `Body 종류`를 `Multipart`로 선택한 뒤 파트를 추가합니다.
+
+예시:
+
+- Method: `POST`
+- Path: `/api/notifications/inquiries/individual`
+- 사용 토큰: 저장해 둔 액세스 토큰 선택
+- Multipart Part name: `request`
+- Multipart Part content-type: `application/json`
+- Multipart Part value:
+
+```json
+{"categoryId":30,"title":"SSE 테스트 문의","content":"SSE 수신 확인용입니다.","privacyConsent":true}
+```
+
+Multipart 요청에서는 `Content-Type: multipart/form-data; boundary=...` 헤더를 앱이 자동 생성하므로 Headers에 직접 `Content-Type`을 넣지 않아도 됩니다.
 
 ## Windows 빌드 준비
 

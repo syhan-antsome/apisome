@@ -462,12 +462,17 @@ textarea:focus {
 
 .kv-editor,
 .extract-editor,
-.path-param-editor {
+.path-param-editor,
+.multipart-editor {
   display: grid;
   gap: 5px;
 }
 
 .block-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
   min-height: 25px;
 }
 
@@ -484,6 +489,7 @@ textarea:focus {
 .kv-row,
 .extract-row,
 .path-param-row,
+.multipart-row,
 .step-line {
   display: grid;
   gap: 4px;
@@ -500,6 +506,15 @@ textarea:focus {
 
 .path-param-row {
   grid-template-columns: 26px minmax(108px, 0.55fr) minmax(170px, 1.4fr);
+}
+
+.multipart-row {
+  grid-template-columns: 26px minmax(90px, 0.7fr) minmax(130px, 1fr) 26px;
+}
+
+.multipart-row textarea {
+  grid-column: 2 / -1;
+  min-height: 74px;
 }
 
 .path-param-row code {

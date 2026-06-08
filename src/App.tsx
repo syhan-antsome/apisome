@@ -25,6 +25,7 @@ import type {
   ExtractRule,
   HttpMethod,
   KeyValue,
+  MultipartField,
   RequestResult,
   ServerProfile,
   Workflow,
@@ -72,6 +73,10 @@ function kv(key = "", value = "", enabled = true): KeyValue {
   return { id: id("kv"), key, value, enabled };
 }
 
+function multipartField(name = "request", value = "", contentType = "application/json", enabled = true): MultipartField {
+  return { id: id("part"), name, value, contentType, enabled };
+}
+
 function token(name = "새 토큰", value = ""): AccessToken {
   return { id: id("token"), name, value, hasValue: Boolean(value) };
 }
@@ -115,6 +120,7 @@ function seedWorkspace(): Workspace {
         authTokenId: "",
         query: [],
         headers: [kv("Content-Type", "application/json")],
+        bodyMode: "raw",
         body: JSON.stringify(
           {
             username: "{{username}}",
@@ -122,7 +128,8 @@ function seedWorkspace(): Workspace {
           },
           null,
           2
-        )
+        ),
+        multipartFields: []
       },
       {
         id: profileRequestId,
@@ -133,7 +140,9 @@ function seedWorkspace(): Workspace {
         authTokenId: sampleToken.id,
         query: [],
         headers: [],
-        body: ""
+        bodyMode: "raw",
+        body: "",
+        multipartFields: []
       }
     ],
     accessTokens: [sampleToken],
@@ -187,7 +196,9 @@ function normalizeRequest(request: ApiRequest): ApiRequest {
     authTokenId: request.authTokenId || "",
     query: request.query || [],
     headers: request.headers || [],
-    body: request.body || ""
+    bodyMode: request.bodyMode || "raw",
+    body: request.body || "",
+    multipartFields: request.multipartFields || []
   };
 }
 
@@ -298,6 +309,51 @@ function applyAuthTokenHeader(headers: Record<string, string>, request: ApiReque
   return next;
 }
 
+function withoutContentType(headers: Record<string, string>) {
+  return Object.fromEntries(Object.entries(headers).filter(([key]) => key.toLowerCase() !== "content-type"));
+}
+
+function activeMultipartFields(request: ApiRequest) {
+  return (request.multipartFields || []).filter((item) => item.enabled && item.name);
+}
+
+function multipartPreview(request: ApiRequest, vars: Record<string, string>) {
+  const parts = activeMultipartFields(request).map((item) => {
+    const name = interpolate(item.name, vars);
+    const contentType = interpolate(item.contentType || "", vars).trim();
+    const value = interpolate(item.value, vars);
+    const lines = [`name: ${name}`];
+    if (contentType) lines.push(`content-type: ${contentType}`);
+    lines.push("", value);
+    return lines.join("\n");
+  });
+  return parts.join("\n\n--- part ---\n\n");
+}
+
+function buildBrowserRequestBody(request: ApiRequest, vars: Record<string, string>) {
+  if (["GET", "HEAD"].includes(request.method)) {
+    return { body: undefined, preview: undefined };
+  }
+
+  if (request.bodyMode === "multipart") {
+    const formData = new FormData();
+    for (const item of activeMultipartFields(request)) {
+      const name = interpolate(item.name, vars);
+      const value = interpolate(item.value, vars);
+      const contentType = interpolate(item.contentType || "", vars).trim();
+      if (contentType) {
+        formData.append(name, new Blob([value], { type: contentType }));
+      } else {
+        formData.append(name, value);
+      }
+    }
+    return { body: formData, preview: multipartPreview(request, vars) };
+  }
+
+  const body = interpolate(request.body, vars);
+  return { body, preview: body };
+}
+
 function browserVariables(server: ServerProfile, runtimeVariables: Record<string, string>) {
   return {
     ...Object.fromEntries(server.variables.filter((item) => item.enabled).map((item) => [item.key, item.value])),
@@ -323,11 +379,14 @@ async function runInBrowser(
       headers[interpolate(item.key, vars)] = interpolate(item.value, vars);
     });
   headers = applyAuthTokenHeader(headers, request, accessTokens, vars);
+  if (request.bodyMode === "multipart") {
+    headers = withoutContentType(headers);
+  }
   const startedAt = performance.now();
-  const requestBody = ["GET", "HEAD"].includes(request.method) ? undefined : interpolate(request.body, vars);
+  const requestBody = buildBrowserRequestBody(request, vars);
 
   if (url.protocol === "mock:") {
-    const response = mockBrowserResponse(url, headers, requestBody);
+    const response = mockBrowserResponse(url, headers, requestBody.preview);
     const extracted = extractValues(extractRules, response.body, response.headers);
     return {
       ok: true,
@@ -335,7 +394,7 @@ async function runInBrowser(
       statusText: "OK",
       elapsedMs: Math.round(performance.now() - startedAt),
       url: url.toString(),
-      request: { method: request.method, headers, body: requestBody },
+      request: { method: request.method, headers, body: requestBody.preview },
       response,
       extracted
     };
@@ -345,7 +404,7 @@ async function runInBrowser(
     const response = await fetch(url, {
       method: request.method,
       headers,
-      body: requestBody
+      body: requestBody.body
     });
     const body = await response.text();
     const responseHeaders = Object.fromEntries(response.headers.entries());
@@ -356,7 +415,7 @@ async function runInBrowser(
       statusText: response.statusText,
       elapsedMs: Math.round(performance.now() - startedAt),
       url: url.toString(),
-      request: { method: request.method, headers, body: requestBody },
+      request: { method: request.method, headers, body: requestBody.preview },
       response: { headers: responseHeaders, body },
       extracted
     };
@@ -589,7 +648,9 @@ function App() {
             authTokenId: "",
             query: [],
             headers: [],
-            body: ""
+            bodyMode: "raw",
+            body: "",
+            multipartFields: []
           });
         const nextRequests = remainingRequests.length ? remainingRequests : [fallbackRequest];
         const workflows = current.workflows.map((workflow) => ({
@@ -684,7 +745,9 @@ function App() {
       authTokenId: "",
       query: [],
       headers: [],
-      body: ""
+      bodyMode: "raw",
+      body: "",
+      multipartFields: []
     };
     setWorkspace((current) => ({
       ...current,
@@ -1199,9 +1262,19 @@ function RequestEditor({
       <PathParamEditor rows={pathParams} onChange={(pathParams) => onChange({ ...request, pathParams })} />
       <KeyValueEditor title="Query" rows={request.query} onChange={(query) => onChange({ ...request, query })} keyPlaceholder="page" valuePlaceholder="1" />
       <KeyValueEditor title="Headers" rows={request.headers} onChange={(headers) => onChange({ ...request, headers })} keyPlaceholder="Content-Type" valuePlaceholder="application/json" />
-      <Field label="Body">
-        <textarea value={request.body} onChange={(event) => onChange({ ...request, body: event.target.value })} spellCheck={false} placeholder='{"token":"{{token}}"}' />
+      <Field label="Body 종류">
+        <select value={request.bodyMode || "raw"} onChange={(event) => onChange({ ...request, bodyMode: event.target.value as ApiRequest["bodyMode"] })}>
+          <option value="raw">Raw</option>
+          <option value="multipart">Multipart</option>
+        </select>
       </Field>
+      {(request.bodyMode || "raw") === "multipart" ? (
+        <MultipartFieldEditor rows={request.multipartFields || []} onChange={(multipartFields) => onChange({ ...request, multipartFields })} />
+      ) : (
+        <Field label="Body">
+          <textarea value={request.body} onChange={(event) => onChange({ ...request, body: event.target.value })} spellCheck={false} placeholder='{"token":"{{token}}"}' />
+        </Field>
+      )}
     </div>
   );
 }
@@ -1304,6 +1377,40 @@ function PathParamEditor({ rows, onChange }: { rows: KeyValue[]; onChange: (rows
           </button>
           <code>{row.key}</code>
           <input value={row.value} onChange={(event) => patchRow(index, { value: event.target.value })} placeholder={`{{${row.key}}}`} />
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function MultipartFieldEditor({ rows, onChange }: { rows: MultipartField[]; onChange: (rows: MultipartField[]) => void }) {
+  function patchRow(index: number, patch: Partial<MultipartField>) {
+    onChange(rows.map((row, rowIndex) => (rowIndex === index ? { ...row, ...patch } : row)));
+  }
+
+  function deleteRow(index: number) {
+    onChange(rows.filter((_, rowIndex) => rowIndex !== index));
+  }
+
+  return (
+    <div className="multipart-editor">
+      <div className="block-title">
+        <strong>Multipart Parts</strong>
+        <button className="ghost" onClick={() => onChange([...rows, multipartField()])}>
+          <Plus size={15} /> 파트 추가
+        </button>
+      </div>
+      {rows.map((row, index) => (
+        <div className="multipart-row" key={row.id}>
+          <button className={row.enabled ? "toggle on" : "toggle"} onClick={() => patchRow(index, { enabled: !row.enabled })} title="활성화 전환">
+            {row.enabled ? <Check size={13} /> : <X size={13} />}
+          </button>
+          <input value={row.name} onChange={(event) => patchRow(index, { name: event.target.value })} placeholder="request" />
+          <input value={row.contentType} onChange={(event) => patchRow(index, { contentType: event.target.value })} placeholder="application/json" />
+          <button className="icon danger" onClick={() => deleteRow(index)} title="삭제">
+            <Trash2 size={14} />
+          </button>
+          <textarea value={row.value} onChange={(event) => patchRow(index, { value: event.target.value })} spellCheck={false} placeholder='{"categoryId":30}' />
         </div>
       ))}
     </div>

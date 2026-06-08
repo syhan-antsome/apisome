@@ -8,6 +8,16 @@ export type KeyValue = {
   secret?: boolean;
 };
 
+export type BodyMode = "raw" | "multipart";
+
+export type MultipartField = {
+  id: string;
+  name: string;
+  value: string;
+  contentType: string;
+  enabled: boolean;
+};
+
 export type ServerProfile = {
   id: string;
   name: string;
@@ -32,7 +42,9 @@ export type ApiRequest = {
   authTokenId: string;
   query: KeyValue[];
   headers: KeyValue[];
+  bodyMode: BodyMode;
   body: string;
+  multipartFields: MultipartField[];
 };
 
 export type ExtractRule = {
